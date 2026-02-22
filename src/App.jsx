@@ -634,16 +634,7 @@ function StatsTab({ events, categories, getCat, statsCatFilter, setStatsCatFilte
     );
   }
 
-  const monthlyCounts = {};
-  events.forEach((ev) => {
-    if (!ev.startDate) return;
-    const d   = new Date(ev.startDate);
-    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
-    monthlyCounts[key] = (monthlyCounts[key] || 0) + 1;
-  });
-  const currentMonthKey   = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
-  const currentMonthCount = monthlyCounts[currentMonthKey] || 0;
-  const highestMonth      = Object.entries(monthlyCounts).sort((a,b) => b[1]-a[1])[0];
+
 
   const catTime = {};
   events.forEach((ev) => {
@@ -659,12 +650,7 @@ function StatsTab({ events, categories, getCat, statsCatFilter, setStatsCatFilte
   const maxCatTime  = Math.max(...Object.values(catTime),1);
   const maxCatCount = Math.max(...Object.values(catCounts),1);
 
-  const last6 = [];
-  for (let i=5;i>=0;i--) {
-    const d   = new Date(now.getFullYear(), now.getMonth()-i, 1);
-    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
-    last6.push({ key, label:MONTH_NAMES[d.getMonth()], count:monthlyCounts[key]||0 });
-  }
+
 
   const cardStyle = { background:T.surface, borderRadius:12, padding:16, border:`1px solid ${T.border}` };
 
@@ -677,46 +663,6 @@ function StatsTab({ events, categories, getCat, statsCatFilter, setStatsCatFilte
 
   return (
     <div className="content-wrap" style={{ paddingTop:16, paddingBottom:16, animation:"fadeIn 0.3s ease", display:"flex", flexDirection:"column", gap:14 }}>
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
-        <div style={{ ...cardStyle, textAlign:"center" }}>
-          <div style={{ fontSize:32, fontWeight:"bold", color:T.accent }}>{currentMonthCount}</div>
-          <div style={{ fontSize:11, color:T.textMuted, letterSpacing:1, textTransform:"uppercase", marginTop:4 }}>This Month</div>
-        </div>
-        <div style={{ ...cardStyle, textAlign:"center" }}>
-          <div style={{ fontSize:32, fontWeight:"bold", color:T.accent }}>{events.length}</div>
-          <div style={{ fontSize:11, color:T.textMuted, letterSpacing:1, textTransform:"uppercase", marginTop:4 }}>Total Events</div>
-        </div>
-        {highestMonth && (
-          <div style={{ ...cardStyle, gridColumn:"1/-1" }}>
-            <div style={{ fontSize:11, color:T.textMuted, letterSpacing:1, textTransform:"uppercase", marginBottom:6 }}>🏆 Best Month</div>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-              <div style={{ fontSize:16, color:T.text }}>
-                {(() => { const [y,m]=highestMonth[0].split("-"); return `${MONTH_NAMES[parseInt(m)-1]} ${y}`; })()}
-              </div>
-              <div style={{ fontSize:22, fontWeight:"bold", color:T.accent }}>{highestMonth[1]} events</div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {last6.some((m) => m.count>0) && (
-        <div style={cardStyle}>
-          <div style={{ fontSize:12, color:T.textMuted, letterSpacing:1, textTransform:"uppercase", marginBottom:14 }}>Events per Month</div>
-          <div style={{ display:"flex", alignItems:"flex-end", gap:6, height:90 }}>
-            {last6.map((m) => {
-              const barH = Math.max((m.count/Math.max(...last6.map((x)=>x.count),1))*64, m.count>0?4:0);
-              return (
-                <div key={m.key} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
-                  <div style={{ fontSize:11, color:T.accent, minHeight:16 }}>{m.count||""}</div>
-                  <div style={{ width:"100%", background:m.key===currentMonthKey?"#E8C97E":"#3A3A4A", borderRadius:"4px 4px 0 0", height:barH, transition:"height 0.5s ease" }} />
-                  <div style={{ fontSize:10, color:T.textMuted }}>{m.label}</div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       {/* Time by category — clickable */}
       {Object.keys(catTime).length>0 && (
         <div style={cardStyle}>
