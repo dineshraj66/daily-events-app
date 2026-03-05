@@ -16,6 +16,7 @@ const DEFAULT_CATEGORIES = [
   { id: "friends",      label: "Friends Gathering",                color: "#A78BFA", icon: "👥" },
   { id: "sleep",        label: "Sleep",                            color: "#6366F1", icon: "😴" },
   { id: "others",       label: "Others",                           color: "#6B7280", icon: "📌" },
+  { id: "unutilized",   label: "Unutilized Time",                   color: "#374151", icon: "⬜" },
 ];
 
 
@@ -195,6 +196,7 @@ export default function App() {
   const [historySearch, setHistorySearch]   = useState("");
   const [historyFilter, setHistoryFilter]   = useState("all");
   const [expandedEvent, setExpandedEvent]   = useState(null);
+  const [expandedDates, setExpandedDates]   = useState({});
   const [statsCatFilter, setStatsCatFilter] = useState(null);
 
   useEffect(() => {
@@ -215,6 +217,7 @@ export default function App() {
     setCategories(DEFAULT_CATEGORIES);
   };
 
+  const toggleDate = (date) => setExpandedDates(p => ({ ...p, [date]: !p[date] }));
   const T = THEMES[themeId] || THEMES.midnight;
   const changeTheme = (id) => { saveTheme(id); setThemeId(id); };
 
@@ -230,49 +233,61 @@ export default function App() {
     return () => { eventsUnsub(); catUnsub(); };
   }, [userId]);
 
-  // Auto-create sleep events between last event and midnight/first event next day
+  // Auto-create unutilized time gaps within each day (12:00 AM to last event midnight)
   useEffect(() => {
     if (!userId || events.length === 0) return;
-    const sortedByDate = [...events].sort((a,b) => a.startDate > b.startDate ? 1 : -1);
+
+    const pad = (n) => String(n).padStart(2,"0");
+
+    // Group real events by date (exclude auto-generated gaps)
     const grouped = {};
-    sortedByDate.forEach(ev => {
-      if (!ev.startDate) return;
+    events.forEach(ev => {
+      if (!ev.startDate || ev.isGap) return;
       const d = ev.startDate.split("T")[0];
       if (!grouped[d]) grouped[d] = [];
       grouped[d].push(ev);
     });
 
-    const dates = Object.keys(grouped).sort();
-    const sleepToCreate = [];
+    const toCreate = [];
 
-    for (let i = 0; i < dates.length - 1; i++) {
-      const date      = dates[i];
-      const nextDate  = dates[i+1];
-      const dayEvents = grouped[date].filter(e => !e.isSleep);
-      if (dayEvents.length === 0) continue;
-      const lastEv    = [...dayEvents].sort((a,b) => a.endDate > b.endDate ? -1 : 1)[0];
-      if (!lastEv?.endDate) continue;
-      const nextDayEvents = grouped[nextDate].filter(e => !e.isSleep);
-      const firstNextEv   = nextDayEvents.sort((a,b) => a.startDate > b.startDate ? 1 : -1)[0];
-      if (!firstNextEv?.startDate) continue;
-      const sleepStart = lastEv.endDate;
-      const sleepEnd   = firstNextEv.startDate;
-      if (new Date(sleepEnd) <= new Date(sleepStart)) continue;
+    Object.entries(grouped).forEach(([date, dayEvs]) => {
+      // Skip today — gaps will be calculated live
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+      if (date === todayStr) return;
 
-      // Check if sleep event already exists for this slot
-      const existingSleep = events.find(e => e.isSleep && e.startDate === sleepStart);
-      if (!existingSleep) {
-        sleepToCreate.push({ sleepStart, sleepEnd, date });
+      // Sort all events by start time
+      const sorted = [...dayEvs]
+        .filter(e => e.startDate && e.endDate)
+        .sort((a,b) => a.startDate > b.startDate ? 1 : -1);
+      if (sorted.length === 0) return;
+
+      // Build timeline from midnight (00:00) to midnight+1 (24:00)
+      const dayStart = `${date}T00:00`;
+      const dayEnd   = `${date}T23:59`;
+      const timeline = [dayStart, ...sorted.flatMap(e=>[e.startDate, e.endDate]), dayEnd];
+
+      // Find gaps
+      for (let i = 0; i < timeline.length - 1; i += 2) {
+        const gapStart = timeline[i];
+        const gapEnd   = timeline[i+1];
+        const ms = new Date(gapEnd) - new Date(gapStart);
+        if (ms < 60000) continue; // ignore gaps < 1 min
+
+        const id = "gap_" + gapStart.replace(/[^0-9]/g,"");
+        const alreadyExists = events.find(e => e.id === id);
+        if (!alreadyExists) {
+          toCreate.push({
+            id, name: "Unutilized Time", category: "unutilized",
+            location: "", startDate: gapStart, endDate: gapEnd,
+            comments: "Auto: unlogged time", isGap: true
+          });
+        }
       }
-    }
+    });
 
-    sleepToCreate.forEach(({ sleepStart, sleepEnd }) => {
-      const id = "sleep_" + sleepStart.replace(/[^0-9]/g,"");
-      setDoc(doc(db, "userdata", userId, "events", id), {
-        id, name: "Sleep", category: "sleep", location: "",
-        startDate: sleepStart, endDate: sleepEnd,
-        comments: "Auto-created", isSleep: true
-      });
+    toCreate.forEach(ev => {
+      setDoc(doc(db, "userdata", userId, "events", ev.id), ev);
     });
   }, [events, userId]);
 
@@ -417,9 +432,9 @@ export default function App() {
           <div style={{ display:"flex", gap:8, marginBottom:14 }}>
             <input value={historySearch} onChange={(e) => setHistorySearch(e.target.value)}
               placeholder="Search events…"
-              style={{ flex:1, background:"#1A1A24", border:"1px solid #2A2A38", borderRadius:8, padding:"8px 12px", color:"#F0EDE8", fontSize:14 }} />
+              style={{ flex:1, background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, padding:"8px 12px", color:T.text, fontSize:14 }} />
             <select value={historyFilter} onChange={(e) => setHistoryFilter(e.target.value)}
-              style={{ background:"#1A1A24", border:"1px solid #2A2A38", borderRadius:8, padding:"8px", color:"#F0EDE8", fontSize:13 }}>
+              style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, padding:"8px", color:T.text, fontSize:13 }}>
               <option value="all">All</option>
               {categories.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
             </select>
@@ -431,9 +446,9 @@ export default function App() {
                 return (!s || ev.name?.toLowerCase().includes(s) || ev.location?.toLowerCase().includes(s))
                   && (historyFilter==="all" || ev.category===historyFilter);
               })
-              .sort((a,b) => a.startDate > b.startDate ? 1:-1); // ascending by time
+              .sort((a,b) => a.startDate > b.startDate ? 1:-1);
             if (filtered.length === 0) return (
-              <div style={{ textAlign:"center", padding:40, color:"#444" }}>No events found</div>
+              <div style={{ textAlign:"center", padding:40, color:T.textMuted }}>No events found</div>
             );
             const grouped = {};
             filtered.forEach((ev) => {
@@ -441,28 +456,56 @@ export default function App() {
               if (!grouped[d]) grouped[d] = [];
               grouped[d].push(ev);
             });
-            // Show dates ascending too
-            return Object.entries(grouped).sort((a,b)=>a[0]>b[0]?1:-1).map(([date, evs]) => (
-              <div key={date} style={{ marginBottom:16 }}>
-                <div style={{ fontSize:11, letterSpacing:2, color:"#666", textTransform:"uppercase", marginBottom:8, paddingLeft:4 }}>
-                  {date===todayStr ? "Today" : new Date(date+"T00:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",year:"numeric"})}
+            return Object.entries(grouped).sort((a,b)=>a[0]>b[0]?-1:1).map(([date, evs]) => {
+              const isToday   = date === todayStr;
+              const isOpen    = isToday || !!expandedDates[date];
+              const dayLabel  = isToday ? "Today" : new Date(date+"T00:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",year:"numeric"});
+              const totalMs   = evs.reduce((sum,ev)=>{
+                if (!ev.startDate||!ev.endDate) return sum;
+                const ms = new Date(ev.endDate)-new Date(ev.startDate);
+                return sum + (ms>0?ms:0);
+              },0);
+              return (
+                <div key={date} style={{ marginBottom:10 }}>
+                  {/* Date header row — clickable for past dates */}
+                  <div onClick={() => !isToday && toggleDate(date)}
+                    style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+                      background:T.surface, border:`1px solid ${T.border}`,
+                      borderLeft:`3px solid ${isToday?T.accent:T.textMuted}`,
+                      borderRadius:10, padding:"10px 14px",
+                      cursor: isToday ? "default" : "pointer",
+                      marginBottom: isOpen ? 8 : 0 }}>
+                    <div>
+                      <div style={{ fontSize:13, fontWeight:"bold", color: isToday ? T.accent : T.text }}>{dayLabel}</div>
+                      <div style={{ fontSize:11, color:T.textMuted, marginTop:2 }}>
+                        {evs.length} {evs.length===1?"entry":"entries"}
+                        {totalMs > 0 && <span> · {formatDuration(totalMs)} logged</span>}
+                      </div>
+                    </div>
+                    {!isToday && (
+                      <div style={{ fontSize:18, color:T.textMuted, transition:"transform 0.2s", transform: isOpen?"rotate(90deg)":"rotate(0deg)" }}>›</div>
+                    )}
+                  </div>
+                  {/* Entries — shown only when expanded */}
+                  {isOpen && (
+                    <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                      {evs.map((ev) => (
+                        <EventCard key={ev.id} ev={ev} getCat={getCat} T={T}
+                          expanded={expandedEvent===ev.id}
+                          onToggle={() => setExpandedEvent(expandedEvent===ev.id ? null : ev.id)}
+                          onEdit={() => { setEditingEvent(ev); setShowForm(true); }}
+                          onDuplicate={() => duplicateEvent(ev)}
+                          onDelete={() => deleteEvent(ev.id)} />
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                  {evs.map((ev) => (
-                    <EventCard key={ev.id} ev={ev} getCat={getCat} T={T}
-                      expanded={expandedEvent===ev.id}
-                      onToggle={() => setExpandedEvent(expandedEvent===ev.id ? null : ev.id)}
-                      onEdit={() => { setEditingEvent(ev); setShowForm(true); }}
-                      onDuplicate={() => duplicateEvent(ev)}
-                      onDelete={() => deleteEvent(ev.id)} />
-                  ))}
-                </div>
-              </div>
-            ));
+              );
+            });
           })()}
           {/* Add button in history tab too */}
           <button onClick={() => { setEditingEvent(null); setShowForm(true); }}
-            style={{ position:"fixed", bottom:90, right:24, width:56, height:56, borderRadius:"50%", background:"#E8C97E", color:"#0F0F14", fontSize:28, border:"none", cursor:"pointer", boxShadow:"0 4px 20px rgba(232,201,126,0.4)", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:"bold", zIndex:50 }}>
+            style={{ position:"fixed", bottom:90, right:24, width:56, height:56, borderRadius:"50%", background:T.accent, color:T.accentText, fontSize:28, border:"none", cursor:"pointer", boxShadow:`0 4px 20px ${T.accent}66`, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:"bold", zIndex:50 }}>
             +
           </button>
         </div>
