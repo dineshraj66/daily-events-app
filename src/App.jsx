@@ -246,6 +246,12 @@ export default function App() {
     setExpandedEvent(null);
   };
 
+  const clearGapEvents = async () => {
+    const gapEvents = events.filter(e => e.isGap || e.id?.startsWith("gap_") || e.category === "unutilized" || e.name === "Unutilized Time");
+    await Promise.all(gapEvents.map(e => deleteDoc(doc(db, "userdata", userId, "events", e.id))));
+    alert(`Cleared ${gapEvents.length} gap entries.`);
+  };
+
   const duplicateEvent = (ev) => {
     // Open the form pre-filled with this event's data, but no id (creates new)
     const now = new Date();
@@ -316,6 +322,12 @@ export default function App() {
                 style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:8, color:T.textMuted, padding:"6px 10px", cursor:"pointer", fontSize:12 }}>
                 📥
               </button>
+              {events.some(e => e.isGap || e.id?.startsWith("gap_") || e.category==="unutilized") && (
+                <button onClick={clearGapEvents}
+                  style={{ background:"#2A1A1A", border:`1px solid #EF4444`, borderRadius:8, color:"#EF4444", padding:"6px 10px", cursor:"pointer", fontSize:12 }}>
+                  🗑 Gaps
+                </button>
+              )}
               <button onClick={() => setShowThemes(true)}
                 style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:8, color:T.textMuted, padding:"6px 10px", cursor:"pointer", fontSize:12 }}>
                 🎨
