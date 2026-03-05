@@ -16,7 +16,6 @@ const DEFAULT_CATEGORIES = [
   { id: "friends",      label: "Friends Gathering",                color: "#A78BFA", icon: "👥" },
   { id: "sleep",        label: "Sleep",                            color: "#6366F1", icon: "😴" },
   { id: "others",       label: "Others",                           color: "#6B7280", icon: "📌" },
-  { id: "unutilized",   label: "Unutilized Time",                   color: "#374151", icon: "⬜" },
 ];
 
 
@@ -233,63 +232,7 @@ export default function App() {
     return () => { eventsUnsub(); catUnsub(); };
   }, [userId]);
 
-  // Auto-create unutilized time gaps within each day (12:00 AM to last event midnight)
-  useEffect(() => {
-    if (!userId || events.length === 0) return;
 
-    const pad = (n) => String(n).padStart(2,"0");
-
-    // Group real events by date (exclude auto-generated gaps)
-    const grouped = {};
-    events.forEach(ev => {
-      if (!ev.startDate || ev.isGap) return;
-      const d = ev.startDate.split("T")[0];
-      if (!grouped[d]) grouped[d] = [];
-      grouped[d].push(ev);
-    });
-
-    const toCreate = [];
-
-    Object.entries(grouped).forEach(([date, dayEvs]) => {
-      // Skip today — gaps will be calculated live
-      const now = new Date();
-      const todayStr = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
-      if (date === todayStr) return;
-
-      // Sort all events by start time
-      const sorted = [...dayEvs]
-        .filter(e => e.startDate && e.endDate)
-        .sort((a,b) => a.startDate > b.startDate ? 1 : -1);
-      if (sorted.length === 0) return;
-
-      // Build timeline from midnight (00:00) to midnight+1 (24:00)
-      const dayStart = `${date}T00:00`;
-      const dayEnd   = `${date}T23:59`;
-      const timeline = [dayStart, ...sorted.flatMap(e=>[e.startDate, e.endDate]), dayEnd];
-
-      // Find gaps
-      for (let i = 0; i < timeline.length - 1; i += 2) {
-        const gapStart = timeline[i];
-        const gapEnd   = timeline[i+1];
-        const ms = new Date(gapEnd) - new Date(gapStart);
-        if (ms < 60000) continue; // ignore gaps < 1 min
-
-        const id = "gap_" + gapStart.replace(/[^0-9]/g,"");
-        const alreadyExists = events.find(e => e.id === id);
-        if (!alreadyExists) {
-          toCreate.push({
-            id, name: "Unutilized Time", category: "unutilized",
-            location: "", startDate: gapStart, endDate: gapEnd,
-            comments: "Auto: unlogged time", isGap: true
-          });
-        }
-      }
-    });
-
-    toCreate.forEach(ev => {
-      setDoc(doc(db, "userdata", userId, "events", ev.id), ev);
-    });
-  }, [events, userId]);
 
   const saveEvent = async (ev) => {
     const id = ev.id || Date.now().toString();
